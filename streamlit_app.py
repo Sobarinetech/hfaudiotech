@@ -1,10 +1,12 @@
 import streamlit as st
 from transformers import pipeline
+import torch  # Ensure PyTorch is available
 
 # Load the Whisper model
 @st.cache_resource
 def load_model():
-    return pipeline("automatic-speech-recognition", model="openai/whisper-large-v3-turbo")
+    # Ensure that PyTorch is installed and used for Whisper
+    return pipeline("automatic-speech-recognition", model="openai/whisper-large-v3-turbo", framework="pt")
 
 # Initialize the Streamlit app
 st.title("WAV Audio Transcription App")
@@ -21,13 +23,9 @@ if audio_file:
     st.audio(audio_file, format="audio/wav")
     st.write("Processing and transcribing your audio...")
 
-    # Save the uploaded file temporarily
-    with open("uploaded_audio.wav", "wb") as f:
-        f.write(audio_file.read())
-
-    # Transcribe the audio file
     try:
-        transcription = whisper_pipeline("uploaded_audio.wav")["text"]
+        # Transcribe the audio directly using the Whisper model
+        transcription = whisper_pipeline(audio_file)["text"]
         st.write("### Transcription:")
         st.write(transcription)
     except Exception as e:
