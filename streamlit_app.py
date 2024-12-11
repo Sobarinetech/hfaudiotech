@@ -1,42 +1,34 @@
 import streamlit as st
-from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
-from datasets import load_dataset
-import torch
-import librosa
+from transformers import pipeline
 
-# Load model and tokenizer
-processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
-model = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base-960h")
+# Load the Whisper model
+@st.cache_resource
+def load_model():
+    return pipeline("automatic-speech-recognition", model="openai/whisper-large-v3-turbo")
 
-def main():
-    st.title("Speech-to-Text Transcription App")
+# Initialize the Streamlit app
+st.title("WAV Audio Transcription App")
+st.write("Upload a WAV audio file, and this app will transcribe its content using OpenAI's Whisper model.")
 
-    # File Uploader
-    uploaded_file = st.file_uploader("Upload an audio file", type=["wav", "mp3"])
+# File uploader for WAV files
+audio_file = st.file_uploader("Upload your WAV audio file", type=["wav"])
 
-    if uploaded_file is not None:
-        # Read the audio file
-        audio_bytes = uploaded_file.read()
-        audio_array, sampling_rate = librosa.load(audio_bytes, sr=16000)
+# Load the Whisper model
+whisper_pipeline = load_model()
 
-        # Preprocess the audio
-        input_values = processor(audio_array, sampling_rate=16000, return_tensors="pt").input_values
+if audio_file:
+    # Display the uploaded audio
+    st.audio(audio_file, format="audio/wav")
+    st.write("Processing and transcribing your audio...")
 
-        # Generate the transcription
-        with torch.no_grad():
-            logits = model(input_values).logits
-            predicted_ids = torch.argmax(logits, dim=-1)
-            transcription = processor.batch_decode(predicted_ids)[0]
+    # Save the uploaded file temporarily
+    with open("uploaded_audio.wav", "wb") as f:
+        f.write(audio_file.read())
 
-        st.text(transcription)
-
-        # Download the transcription
-        st.download_button(
-            label="Download Transcription",
-            data=transcription,
-            file_name="transcription.txt",
-            mime="text/plain"
-        )
-
-if __name__ == "__main__":
-    main()
+    # Transcribe the audio file
+    try:
+        transcription = whisper_pipeline("uploaded_audio.wav")["text"]
+        st.write("### Transcription:")
+        st.write(transcription)
+    except Exception as e:
+        st.error(f"An error occurred during transcription: {e}")
