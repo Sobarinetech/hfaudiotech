@@ -1,11 +1,14 @@
+import os
 import streamlit as st
 from transformers import pipeline
 import torch  # Ensure PyTorch is available
 
-# Load the Whisper model
+# Suppress unnecessary TensorFlow warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+# Load the Whisper model (ensure PyTorch is used)
 @st.cache_resource
 def load_model():
-    # Ensure that PyTorch is installed and used for Whisper
     return pipeline("automatic-speech-recognition", model="openai/whisper-large-v3-turbo", framework="pt")
 
 # Initialize the Streamlit app
@@ -16,7 +19,11 @@ st.write("Upload a WAV audio file, and this app will transcribe its content usin
 audio_file = st.file_uploader("Upload your WAV audio file", type=["wav"])
 
 # Load the Whisper model
-whisper_pipeline = load_model()
+try:
+    whisper_pipeline = load_model()
+except Exception as e:
+    st.error(f"Failed to load the model: {e}")
+    st.stop()
 
 if audio_file:
     # Display the uploaded audio
