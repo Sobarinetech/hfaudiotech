@@ -1,3 +1,5 @@
 streamlit
-pyannote.audio
-pyannote
+transformers
+datasets
+torch 
+librosa
