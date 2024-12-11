@@ -1,71 +1,59 @@
 import os
+import torch
 import streamlit as st
-from pyannote.audio import Pipeline
-from pydub import AudioSegment
+from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
+import soundfile as sf
 
-# Set up the PyAnnote pipeline with HuggingFace token
-HUGGINGFACE_ACCESS_TOKEN = "your_huggingface_access_token_here"
-pipeline = Pipeline.from_pretrained(
-    "pyannote/speaker-diarization-3.1",
-    use_auth_token=HUGGINGFACE_ACCESS_TOKEN
-)
+# Load Wav2Vec2 processor and model
+processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
+model = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base-960h")
 
-def process_audio(file_path):
-    """Processes the audio file and performs speaker diarization."""
+def transcribe_audio(file_path):
+    """Transcribe audio using Wav2Vec2."""
     try:
-        diarization = pipeline(file_path)
-        rttm_output = "audio.rttm"
-        with open(rttm_output, "w") as rttm:
-            diarization.write_rttm(rttm)
-        return diarization
+        # Read the audio file
+        audio, sample_rate = sf.read(file_path)
+
+        # Ensure audio is 16 kHz mono
+        if sample_rate != 16000:
+            raise ValueError("Audio must be 16 kHz. Please preprocess your audio file to match this format.")
+
+        # Tokenize and process audio
+        input_values = processor(audio, return_tensors="pt", sampling_rate=16000).input_values
+        logits = model(input_values).logits
+
+        # Decode predictions
+        predicted_ids = torch.argmax(logits, dim=-1)
+        transcription = processor.batch_decode(predicted_ids)[0]
+        return transcription
     except Exception as e:
-        st.error(f"Failed to process audio: {e}")
+        st.error(f"Error processing audio: {e}")
         return None
 
-def convert_rttm_to_text(diarization, output_path):
-    """Converts diarization results to text format with speaker labels."""
-    transcription = []
-    for segment, _, speaker in diarization.itertracks(yield_label=True):
-        transcription.append(f"Speaker {speaker}: [{segment.start:.2f} - {segment.end:.2f}]\n")
-    
-    with open(output_path, "w") as txt_file:
-        txt_file.write("\n".join(transcription))
-
-    return transcription
-
 def main():
-    """Streamlit application for audio transcription."""
-    st.title("Call Transcription Tool")
-    st.write("Upload your call recording to transcribe:")
+    """Streamlit app for audio transcription."""
+    st.title("Speech-to-Text Transcription with Wav2Vec2")
+    st.write("Upload a .wav audio file in 16 kHz mono format for transcription.")
 
-    uploaded_file = st.file_uploader("Choose an audio file", type=["wav", "mp3"])
+    uploaded_file = st.file_uploader("Choose an audio file", type=["wav"])
 
     if uploaded_file is not None:
-        with st.spinner("Processing audio file..."):
+        with st.spinner("Transcribing audio..."):
             # Save uploaded file to a temporary path
-            temp_file_path = os.path.join("temp_audio_file", uploaded_file.name)
-            os.makedirs("temp_audio_file", exist_ok=True)
+            temp_file_path = os.path.join("temp_audio", uploaded_file.name)
+            os.makedirs("temp_audio", exist_ok=True)
             with open(temp_file_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
 
-            # Convert file to WAV format if needed
-            if not temp_file_path.endswith(".wav"):
-                audio = AudioSegment.from_file(temp_file_path)
-                wav_path = temp_file_path.rsplit(".", 1)[0] + ".wav"
-                audio.export(wav_path, format="wav")
-                temp_file_path = wav_path
+            # Transcribe audio
+            transcription = transcribe_audio(temp_file_path)
 
-            # Perform diarization
-            diarization = process_audio(temp_file_path)
-            if diarization:
-                # Save transcription to text file
-                output_path = temp_file_path.rsplit(".", 1)[0] + "_transcription.txt"
-                transcription = convert_rttm_to_text(diarization, output_path)
-                
+            if transcription:
                 st.success("Transcription completed successfully!")
+                st.text_area("Transcription", transcription, height=200)
                 st.download_button(
-                    label="Download Transcription", 
-                    data="\n".join(transcription), 
+                    label="Download Transcription",
+                    data=transcription,
                     file_name="transcription.txt",
                     mime="text/plain"
                 )
